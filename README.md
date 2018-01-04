@@ -1,7 +1,7 @@
 # Lucee-Redis-Pub-Sub
 Lucee event gateway used for Redis Pub/Sub
 
-#License
+# License
 MIT License
 
 Copyright (c) 2018 Brandon Brown
