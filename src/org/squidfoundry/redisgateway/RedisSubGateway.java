@@ -1,29 +1,26 @@
 package org.squidfoundry.redisgateway;
 
-import java.io.IOException;
 import java.util.Map;
 
-import lucee.runtime.gateway.Gateway;
-import lucee.runtime.gateway.GatewayEngine;
 import redis.clients.jedis.JedisPubSub;
 import redis.clients.jedis.Jedis;
-
+import lucee.runtime.gateway.Gateway;
+import lucee.runtime.gateway.GatewayEngine;
 import lucee.loader.engine.CFMLEngine;
 import lucee.loader.engine.CFMLEngineFactory;
 import lucee.runtime.type.Struct;
-import lucee.runtime.util.Cast;
 import lucee.runtime.util.Creation;
 
 public class RedisSubGateway extends JedisPubSub implements Gateway {
 	
-	protected Jedis jedis;
+	protected Jedis jedisSub;
+	protected Jedis jedisPub;
 	protected Thread clientThread;
 	
 	private CFMLEngine cfmlEngine;
-	private Cast caster;
 	private Creation creator;
 	
-	public static final String DEFAULT_HOST = "127.0.0.1";	
+	public static final String DEFAULT_HOST = "127.0.0.1";
 	public static final int DEFAULT_PORT = 6379;
 	public static final String DEFAULT_CHANNEL = "luceeredis";
 	
@@ -37,14 +34,12 @@ public class RedisSubGateway extends JedisPubSub implements Gateway {
 	private String cfcPath;
 	private GatewayEngine engine;
 
-	@Override
 	public void init(GatewayEngine engine, String id, String cfcPath, Map config) {
 		this.engine=engine;
 		this.cfcPath=cfcPath;
 		this.id=id;
 		
 		cfmlEngine=CFMLEngineFactory.getInstance();
-		caster=cfmlEngine.getCastUtil();
 		creator = cfmlEngine.getCreationUtil();
 		
 		if (config.containsKey("host"))
@@ -63,15 +58,13 @@ public class RedisSubGateway extends JedisPubSub implements Gateway {
 				+ ":" + port + "::" + channel + ".");
 	}
 	
-	@Override
-	public void doRestart() throws IOException {
+	public void doRestart() {
 		doStop();
 		doStart();
 		
 	}
 
-	@Override
-	public void doStart() throws IOException {
+	public void doStart() {
 		state = STARTING;
 		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"started");
 
@@ -88,47 +81,45 @@ public class RedisSubGateway extends JedisPubSub implements Gateway {
 		
 	}
 	
-	protected void startJedis() {
+	protected void startJedis() {		
 		engine.log(this, GatewayEngine.LOGLEVEL_INFO, host);
-		jedis = new Jedis(host, port);
-		jedis.connect();
+		jedisPub = new Jedis(host, port);
+		jedisPub.connect();
+		
+		jedisSub = new Jedis(host, port);
+		jedisSub.connect();
 //		if (auth != null)
 //			jedis.auth("foobared");
-		jedis.configSet("timeout", "300");
-		jedis.flushAll();
-		jedis.subscribe(this, channel);
+		jedisSub.flushAll();
+		jedisSub.subscribe(this, channel);
 
 	}
 
-	@Override
-	public void doStop() throws IOException {
+	public void doStop() {
 		state = STOPPING;
 		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"stopping");
 		this.unsubscribe();
-		jedis.disconnect();
+		jedisSub.disconnect();
 		state = STOPPED;
 		
 	}
 
-	@Override
 	public Object getHelper() {
 		return null;
 	}
 
-	@Override
 	public String getId() {
 		return id;
 	}
 	
-	 @Override
 	public int getState() {
 		return state;
 	 }
 
-	@Override
 	public String sendMessage(Map _data) {
 		String status="OK";
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,_data.toString());
+		engine.log(this, GatewayEngine.LOGLEVEL_INFO, "Message from gateway was:" + _data.get("message").toString());
+		jedisPub.publish(channel, _data.get("message").toString());
 		return status;
 	}
 
@@ -140,22 +131,21 @@ public class RedisSubGateway extends JedisPubSub implements Gateway {
 		
 		Struct data=creator.createStruct();
         	data.setEL(creator.createKey("message"), message);
-        	   
+        	data.setEL(creator.createKey("cfcMethod"), "onIncomingMessage");
+        	data.setEL(creator.createKey("cfcTimeout"), new Double(10));
+        	data.setEL(creator.createKey("cfcPath"), this.cfcPath);
+        	data.setEL(creator.createKey("gatewayId"), getId());
+        	data.setEL(creator.createKey("gatewayType"), "RedisSubPub");
+        	
         Struct event=creator.createStruct();
 	        event.setEL(creator.createKey("data"), data);
-	        event.setEL(creator.createKey("originatorID"), "RedisSubGateway");
+	        event.setEL(creator.createKey("channel"), channel);
 	        
-	        event.setEL(creator.createKey("cfcMethod"), "onIncomingMessage");
-	        event.setEL(creator.createKey("cfcTimeout"), new Double(10));
-	        event.setEL(creator.createKey("cfcPath"), this.cfcPath);
-	
-	        event.setEL(creator.createKey("gatewayType"), "RedisSub");
-	        event.setEL(creator.createKey("gatewayId"), getId());
-        
-        if (engine.invokeListener(this, "onIncomingMessage", event))
+        if (engine.invokeListener(this, "onIncomingMessage", event)) {
         	engine.log(this, GatewayEngine.LOGLEVEL_INFO, "RedisSubGateway(" + getId() + ") was invoked:");
-        else
+        } else {
         	engine.log(this, GatewayEngine.LOGLEVEL_ERROR, "RedisSubGateway(" + getId() + ") Failed to invoke");
+        }
 		
 	}
 
