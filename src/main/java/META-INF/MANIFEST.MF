@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+Bundle-SymbolicName: com.squidfoundry.luceeredispubsub
+Export-Package: com.squidfoundry.luceeredispubsub;version=1.0.0
+Bundle-Name: LuceeRedisPubSub
+Bundle-Version: 1.0.0
+Built-By: brandon
+Bundle-ManifestVersion: 2
+Import-Package: redis.clients.jedis;version="2.9.0",org.apache.commons.pool2
+Created-By: brandon
+Build-Jdk: 1.8
