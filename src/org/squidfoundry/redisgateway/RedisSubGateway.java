@@ -1,4 +1,4 @@
-package org.squidfoundry.redisgateway;
+package com.squidfoundry.luceeredispubsub;
 
 import java.util.Map;
 
@@ -11,7 +11,7 @@ import lucee.loader.engine.CFMLEngineFactory;
 import lucee.runtime.type.Struct;
 import lucee.runtime.util.Creation;
 
-public class RedisSubGateway extends JedisPubSub implements Gateway {
+public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 	
 	protected Jedis jedisSub;
 	protected Jedis jedisPub;
@@ -34,7 +34,7 @@ public class RedisSubGateway extends JedisPubSub implements Gateway {
 	private String cfcPath;
 	private GatewayEngine engine;
 
-	public void init(GatewayEngine engine, String id, String cfcPath, Map config) {
+	public void init(GatewayEngine engine, String id, String cfcPath, Map <String, String>config) {
 		this.engine=engine;
 		this.cfcPath=cfcPath;
 		this.id=id;
@@ -116,7 +116,7 @@ public class RedisSubGateway extends JedisPubSub implements Gateway {
 		return state;
 	 }
 
-	public String sendMessage(Map _data) {
+	public String sendMessage(Map<?, ?> _data) {
 		String status="OK";
 		engine.log(this, GatewayEngine.LOGLEVEL_INFO, "Message from gateway was:" + _data.get("message").toString());
 		jedisPub.publish(channel, _data.get("message").toString());
