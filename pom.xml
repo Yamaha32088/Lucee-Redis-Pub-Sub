@@ -1,0 +1,47 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.squidfoundry</groupId>
+  <artifactId>lucee-redis-pubsub</artifactId>
+  <version>1.0.0</version>
+
+  <name>Lucee Redis PubSub</name>
+  <description>Enables Redis PubSub features in Lucee</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+   <build>
+         <finalName>${groupId}.${artifactId}-${version}</finalName>
+         <plugins>
+         	<plugin>
+         		<groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.0.2</version>
+                <configuration>
+                    <archive>
+                        <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+                    </archive>
+                </configuration>
+         	</plugin>
+         </plugins>
+   </build>   
+
+  <dependencies>
+    <dependency>
+    	<groupId>org.lucee</groupId>
+    	<artifactId>lucee</artifactId>
+    	<version>5.2.5.20</version>
+    	<scope>provided</scope>
+    </dependency>
+    <dependency>
+	    <groupId>redis.clients</groupId>
+	    <artifactId>jedis</artifactId>
+	    <version>2.9.0</version>
+	    <type>jar</type>
+	    <scope>compile</scope>
+	</dependency>
+  </dependencies>
+</project>
