@@ -1,3 +1,4 @@
+[![Build Status](https://travis-ci.org/Yamaha32088/Lucee-Redis-Pub-Sub.svg?branch=create-tests)](https://travis-ci.org/Yamaha32088/Lucee-Redis-Pub-Sub)
 # Lucee-Redis-Pub-Sub
 Lucee event gateway used for Redis Pub/Sub
 
