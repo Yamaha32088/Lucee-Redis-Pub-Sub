@@ -1,0 +1,29 @@
+{
+    "name":"Redis PubSub",
+    "version":"1.0.0",
+    "author":"",
+    "location":"",
+    "homepage":"",
+    "documentation":"",
+    "repository":{
+        "type":"git",
+        "URL":"https://github.com/Yamaha32088/Lucee-Redis-Pub-Sub"
+    },
+    "bugs":"https://github.com/Yamaha32088/Lucee-Redis-Pub-Sub/issues",
+    "slug":"Lucee-Redis-Pub-Sub",
+    "shortDescription":"",
+    "description":"",
+    "type":"",
+    "dependencies":{},
+    "devDependencies":{
+        "testbox":"^2.4.0+80"
+    },
+    "installPaths":{
+        "testbox":"testbox"
+    },
+    "ignore":[
+        "**/.*",
+        "test",
+        "tests"
+    ]
+}
