@@ -4,6 +4,12 @@ import java.util.Map;
 
 import redis.clients.jedis.JedisPubSub;
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.exceptions.JedisConnectionException;
+
+import java.io.IOException;
+
 import lucee.runtime.gateway.Gateway;
 import lucee.runtime.gateway.GatewayEngine;
 import lucee.loader.engine.CFMLEngine;
@@ -13,9 +19,7 @@ import lucee.runtime.util.Creation;
 
 public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 	
-	protected Jedis jedisSub;
-	protected Jedis jedisPub;
-	protected Thread clientThread;
+	private JedisPool pool;
 	
 	private CFMLEngine cfmlEngine;
 	private Creation creator;
@@ -57,50 +61,45 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"RedisSubGateway(" + getId() + ") configured for " + host
 				+ ":" + port + "::" + channel + ".");
 	}
-	
-	public void doRestart() {
-		doStop();
-		doStart();
+
+	public String sendMessage(Map<?, ?> _data) {
+		String status="OK";
+		engine.log(this, GatewayEngine.LOGLEVEL_INFO, "Message from gateway was:" + _data.get("message").toString());
+
+		try(Jedis redisClient = pool.getResource()) {
+			redisClient.publish(channel, _data.get("message").toString());
+		} catch(JedisConnectionException e) {
+			doStart();
+		}
 		
+		return status;
 	}
 
 	public void doStart() {
 		state = STARTING;
 		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"started");
+		final LuceeRedisPubSub self = this;
 
-		clientThread = new Thread(new Runnable() {
+		new Thread(new Runnable() {
 			public void run() {
-				startJedis();
+				try {
+					startJedis();
+				} catch(Exception e) {
+					engine.log(self, GatewayEngine.LOGLEVEL_ERROR, e.getMessage());
+				}
 			}
-		});
-		
-		clientThread.start();
+		}).start();
 		
 		state = RUNNING;
 		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"running");
 		
 	}
-	
-	protected void startJedis() {		
-		engine.log(this, GatewayEngine.LOGLEVEL_INFO, host);
-		jedisPub = new Jedis(host, port);
-		jedisPub.connect();
-		
-		jedisSub = new Jedis(host, port);
-		jedisSub.connect();
-//		if (auth != null)
-//			jedis.auth("foobared");
-		jedisSub.flushAll();
-		jedisSub.subscribe(this, channel);
+
+	public void doRestart() {
 
 	}
 
 	public void doStop() {
-		state = STOPPING;
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"stopping");
-		this.unsubscribe();
-		jedisSub.disconnect();
-		state = STOPPED;
 		
 	}
 
@@ -115,12 +114,24 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 	public int getState() {
 		return state;
 	 }
+	
+	protected void startJedis() throws IOException {		
+		if(pool == null) {
+			pool = new JedisPool(getJedisPoolConfig(), host, port, 2000);
+		}
+		
+		try(Jedis redisClient = pool.getResource()) {
+			redisClient.subscribe(this, channel);
+		} catch(Exception e) {
+			System.out.println("There was an error subscribing");
+			engine.log(this, GatewayEngine.LOGLEVEL_ERROR, e.getMessage());
+		}
 
-	public String sendMessage(Map<?, ?> _data) {
-		String status="OK";
-		engine.log(this, GatewayEngine.LOGLEVEL_INFO, "Message from gateway was:" + _data.get("message").toString());
-		jedisPub.publish(channel, _data.get("message").toString());
-		return status;
+	}
+
+	protected JedisPoolConfig getJedisPoolConfig() throws IOException {
+		JedisPoolConfig config = new JedisPoolConfig();
+		return config;
 	}
 
 	@Override
@@ -147,36 +158,6 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
         	engine.log(this, GatewayEngine.LOGLEVEL_ERROR, "RedisSubGateway(" + getId() + ") Failed to invoke");
         }
 		
-	}
-
-	@Override
-	public void onPMessage(String pattern, String channel, String message) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void onPSubscribe(String pattern, int subscribedChannels) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void onPUnsubscribe(String pattern, int subscribedChannels) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void onSubscribe(String channel, int subscribedChannels) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void onUnsubscribe(String channel, int subscribedChannels) {
-		// TODO Auto-generated method stub
-
 	}
 
 }
