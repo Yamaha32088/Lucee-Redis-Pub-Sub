@@ -6,7 +6,7 @@ Clone of https://github.com/nmische/cf-redis-sub-gateway and adapted to work wit
 # License
 MIT License
 
-Copyright (c) 2018 Brandon Brown
+Copyright (c) 2019 Brandon Brown
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
