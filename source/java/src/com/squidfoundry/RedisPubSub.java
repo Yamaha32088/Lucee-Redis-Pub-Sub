@@ -1,12 +1,12 @@
-package com.squidfoundry.luceeredispubsub;
+package com.squidfoundry;
 
 import java.util.Map;
 
 import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.exceptions.JedisConnectionException;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
-import redis.clients.jedis.exceptions.JedisConnectionException;
 
 import java.io.IOException;
 
@@ -17,7 +17,7 @@ import lucee.loader.engine.CFMLEngineFactory;
 import lucee.runtime.type.Struct;
 import lucee.runtime.util.Creation;
 
-public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
+public class RedisPubSub extends JedisPubSub implements Gateway {
 	
 	private JedisPool pool;
 	
@@ -37,6 +37,7 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 	private int state=Gateway.STOPPED;
 	private String cfcPath;
 	private GatewayEngine engine;
+	private int restarts = 0;
 
 	public void init(GatewayEngine engine, String id, String cfcPath, Map <String, String>config) {
 		this.engine=engine;
@@ -57,19 +58,19 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 		if (config.containsKey("cfcPath"))
 			this.cfcPath = config.get("cfcPath").toString();
 		
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"initializing");
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"RedisSubGateway(" + getId() + ") configured for " + host
+		info("initializing");
+		info("RedisSubGateway(" + getId() + ") configured for " + host
 				+ ":" + port + "::" + channel + ".");
 	}
 
 	public String sendMessage(Map<?, ?> _data) {
 		String status="OK";
-		engine.log(this, GatewayEngine.LOGLEVEL_INFO, "Message from gateway was:" + _data.get("message").toString());
+		info("Message from gateway was:" + _data.get("message").toString());
 
 		try(Jedis redisClient = pool.getResource()) {
 			redisClient.publish(channel, _data.get("message").toString());
 		} catch(JedisConnectionException e) {
-			doStart();
+			doRestart();
 		}
 		
 		return status;
@@ -77,66 +78,43 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 
 	public void doStart() {
 		state = STARTING;
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"started");
-		final LuceeRedisPubSub self = this;
-
-		new Thread(new Runnable() {
-			public void run() {
-				try {
+		try {
+			info("started");
+			new Thread(new Runnable() {
+				public void run() {
 					startJedis();
-				} catch(Exception e) {
-					engine.log(self, GatewayEngine.LOGLEVEL_ERROR, e.getMessage());
 				}
-			}
-		}).start();
-		
-		state = RUNNING;
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"running");
+			}).start();
+			
+			state = RUNNING;
+			info("running");
+		} catch(Exception e) {
+			state = FAILED;
+			error(e.getMessage());
+		}
 		
 	}
 
 	public void doRestart() {
-
+		doStop();
+		pool = getPool();
+		doStart();
 	}
 
 	public void doStop() {
-		
-	}
-
-	public Object getHelper() {
-		return null;
-	}
-
-	public String getId() {
-		return id;
-	}
-	
-	public int getState() {
-		return state;
-	 }
-	
-	protected void startJedis() throws IOException {		
-		if(pool == null) {
-			pool = new JedisPool(getJedisPoolConfig(), host, port, 2000);
-		}
-		
-		try(Jedis redisClient = pool.getResource()) {
-			redisClient.subscribe(this, channel);
+		state = STOPPING;
+		try {
+			pool.destroy();
 		} catch(Exception e) {
-			System.out.println("There was an error subscribing");
-			engine.log(this, GatewayEngine.LOGLEVEL_ERROR, e.getMessage());
+			e.printStackTrace();
+			state = FAILED;
 		}
-
+		state = STOPPED;
 	}
-
-	protected JedisPoolConfig getJedisPoolConfig() throws IOException {
-		JedisPoolConfig config = new JedisPoolConfig();
-		return config;
-	}
-
+	
 	@Override
 	public void onMessage(String channel, String message) {
-		engine.log(this, GatewayEngine.LOGLEVEL_INFO, "RedisSubGateway(" + getId()
+		info("RedisSubGateway(" + getId()
 				+ ") Message received. Message was: '"
 				+ message.substring(0, Math.min(20, message.length())) + "'");
 		
@@ -153,11 +131,62 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 	        event.setEL(creator.createKey("channel"), channel);
 	        
         if (engine.invokeListener(this, "onIncomingMessage", event)) {
-        	engine.log(this, GatewayEngine.LOGLEVEL_INFO, "RedisSubGateway(" + getId() + ") was invoked:");
+        	info("RedisSubGateway(" + getId() + ") was invoked:");
         } else {
-        	engine.log(this, GatewayEngine.LOGLEVEL_ERROR, "RedisSubGateway(" + getId() + ") Failed to invoke");
-        }
+        	error("RedisSubGateway(" + getId() + ") Failed to invoke");
+        }	
+	}
+
+	public Object getHelper() {
+		return null;
+	}
+
+	public String getId() {
+		return id;
+	}
+	
+	public int getState() {
+		return state;
+	 }
+	
+	private void startJedis() {
+		if(pool == null) {
+			pool = getPool();
+		}
 		
+		try(Jedis redisClient = pool.getResource()) {
+			redisClient.subscribe(this, channel);
+		} catch(Exception e) {
+			e.printStackTrace();
+			state = FAILED;
+			if(restarts <= 3) {
+				restarts++;
+				doRestart();
+			}
+		}
+	}
+	
+	protected JedisPool getPool() {
+		try {
+			pool = new JedisPool(getJedisPoolConfig(), host, port, 2000);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		return pool;
+	}
+
+	protected JedisPoolConfig getJedisPoolConfig() throws IOException {
+		JedisPoolConfig config = new JedisPoolConfig();
+		return config;
+	}
+	
+	private void info(String msg) {
+		engine.log(this, GatewayEngine.LOGLEVEL_INFO, msg);
+	}
+	
+	private void error(String msg) {
+		engine.log(this, GatewayEngine.LOGLEVEL_ERROR, msg);
 	}
 
 }

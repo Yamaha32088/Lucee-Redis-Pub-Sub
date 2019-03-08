@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project default="clean" basedir="." name="LuceeRedisPubSub-extension">
+<project default="clean" basedir="." name="com.squidfoundry.redispubsub-extension">
 	<description>
-		Lucee Redis PubSub extension
+		Redis PubSub extension for Lucee
 	</description>
 
 	<property file="build.properties" />
@@ -70,16 +70,11 @@
 
 		<echo file="${dist}/extension/META-INF/MANIFEST.MF">Manifest-Version: 1.0
 Built-Date: ${NOW}
-Export-Package: com.squidfoundry.luceeredispubsub
-Bundle-ManifestVersion: 2
-Require-Bundle: redis.clients.jedis;bundle-version=3.0.1,
- org.apache.commons.pool2;bundle-version=2.4.1
 version: "${bundleversion}${build.number}${appendix}"
 id: "${id}"
 name: "${label}"
 description: "${description}"
-start-bundles: false
-
+start-bundles: true
 </echo>
 	</target>
 

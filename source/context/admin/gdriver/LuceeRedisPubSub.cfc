@@ -37,7 +37,7 @@ component extends='Gateway' {
     }
 
     string function getClass() {
-        return 'com.squidfoundry.luceeredispubsub.LuceeRedisPubSub';
+        return 'com.squidfoundry.RedisPubSub';
     }
 
     string function getLabel() {
