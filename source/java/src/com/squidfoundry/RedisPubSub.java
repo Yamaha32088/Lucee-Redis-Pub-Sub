@@ -1,9 +1,15 @@
-package com.squidfoundry.luceeredispubsub;
+package com.squidfoundry;
 
 import java.util.Map;
 
 import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.exceptions.JedisConnectionException;
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+
+import java.io.IOException;
+
 import lucee.runtime.gateway.Gateway;
 import lucee.runtime.gateway.GatewayEngine;
 import lucee.loader.engine.CFMLEngine;
@@ -11,11 +17,9 @@ import lucee.loader.engine.CFMLEngineFactory;
 import lucee.runtime.type.Struct;
 import lucee.runtime.util.Creation;
 
-public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
+public class RedisPubSub extends JedisPubSub implements Gateway {
 	
-	protected Jedis jedisSub;
-	protected Jedis jedisPub;
-	protected Thread clientThread;
+	private JedisPool pool;
 	
 	private CFMLEngine cfmlEngine;
 	private Creation creator;
@@ -33,6 +37,7 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 	private int state=Gateway.STOPPED;
 	private String cfcPath;
 	private GatewayEngine engine;
+	private int restarts = 0;
 
 	public void init(GatewayEngine engine, String id, String cfcPath, Map <String, String>config) {
 		this.engine=engine;
@@ -53,79 +58,63 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 		if (config.containsKey("cfcPath"))
 			this.cfcPath = config.get("cfcPath").toString();
 		
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"initializing");
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"RedisSubGateway(" + getId() + ") configured for " + host
+		info("initializing");
+		info("RedisSubGateway(" + getId() + ") configured for " + host
 				+ ":" + port + "::" + channel + ".");
 	}
-	
-	public void doRestart() {
-		doStop();
-		doStart();
+
+	public String sendMessage(Map<?, ?> _data) {
+		String status="OK";
+		info("Message from gateway was:" + _data.get("message").toString());
+
+		try(Jedis redisClient = pool.getResource()) {
+			redisClient.publish(channel, _data.get("message").toString());
+		} catch(JedisConnectionException e) {
+			doRestart();
+		}
 		
+		return status;
 	}
 
 	public void doStart() {
 		state = STARTING;
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"started");
-
-		clientThread = new Thread(new Runnable() {
-			public void run() {
-				startJedis();
-			}
-		});
-		
-		clientThread.start();
-		
-		state = RUNNING;
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"running");
+		try {
+			info("started");
+			new Thread(new Runnable() {
+				public void run() {
+					startJedis();
+				}
+			}).start();
+			
+			state = RUNNING;
+			info("running");
+		} catch(Exception e) {
+			state = FAILED;
+			error(e.getMessage());
+		}
 		
 	}
-	
-	protected void startJedis() {		
-		engine.log(this, GatewayEngine.LOGLEVEL_INFO, host);
-		jedisPub = new Jedis(host, port);
-		jedisPub.connect();
-		
-		jedisSub = new Jedis(host, port);
-		jedisSub.connect();
-//		if (auth != null)
-//			jedis.auth("foobared");
-		jedisSub.flushAll();
-		jedisSub.subscribe(this, channel);
 
+	public void doRestart() {
+		doStop();
+		pool = getPool();
+		doStart();
 	}
 
 	public void doStop() {
 		state = STOPPING;
-		engine.log(this,GatewayEngine.LOGLEVEL_INFO,"stopping");
-		this.unsubscribe();
-		jedisSub.disconnect();
+		try {
+			pool.destroy();
+		} catch(Exception e) {
+			e.printStackTrace();
+			state = FAILED;
+		}
 		state = STOPPED;
-		
-	}
-
-	public Object getHelper() {
-		return null;
-	}
-
-	public String getId() {
-		return id;
 	}
 	
-	public int getState() {
-		return state;
-	 }
-
-	public String sendMessage(Map<?, ?> _data) {
-		String status="OK";
-		engine.log(this, GatewayEngine.LOGLEVEL_INFO, "Message from gateway was:" + _data.get("message").toString());
-		jedisPub.publish(channel, _data.get("message").toString());
-		return status;
-	}
-
 	@Override
 	public void onMessage(String channel, String message) {
-		engine.log(this, GatewayEngine.LOGLEVEL_INFO, "RedisSubGateway(" + getId()
+		info("RedisSubGateway(" + getId()
 				+ ") Message received. Message was: '"
 				+ message.substring(0, Math.min(20, message.length())) + "'");
 		
@@ -142,41 +131,62 @@ public class LuceeRedisPubSub extends JedisPubSub implements Gateway {
 	        event.setEL(creator.createKey("channel"), channel);
 	        
         if (engine.invokeListener(this, "onIncomingMessage", event)) {
-        	engine.log(this, GatewayEngine.LOGLEVEL_INFO, "RedisSubGateway(" + getId() + ") was invoked:");
+        	info("RedisSubGateway(" + getId() + ") was invoked:");
         } else {
-        	engine.log(this, GatewayEngine.LOGLEVEL_ERROR, "RedisSubGateway(" + getId() + ") Failed to invoke");
-        }
+        	error("RedisSubGateway(" + getId() + ") Failed to invoke");
+        }	
+	}
+
+	public Object getHelper() {
+		return null;
+	}
+
+	public String getId() {
+		return id;
+	}
+	
+	public int getState() {
+		return state;
+	 }
+	
+	private void startJedis() {
+		if(pool == null) {
+			pool = getPool();
+		}
 		
+		try(Jedis redisClient = pool.getResource()) {
+			redisClient.subscribe(this, channel);
+		} catch(Exception e) {
+			e.printStackTrace();
+			state = FAILED;
+			if(restarts <= 3) {
+				restarts++;
+				doRestart();
+			}
+		}
+	}
+	
+	protected JedisPool getPool() {
+		try {
+			pool = new JedisPool(getJedisPoolConfig(), host, port, 2000);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		return pool;
 	}
 
-	@Override
-	public void onPMessage(String pattern, String channel, String message) {
-		// TODO Auto-generated method stub
-
+	protected JedisPoolConfig getJedisPoolConfig() throws IOException {
+		JedisPoolConfig config = new JedisPoolConfig();
+		return config;
 	}
-
-	@Override
-	public void onPSubscribe(String pattern, int subscribedChannels) {
-		// TODO Auto-generated method stub
-
+	
+	private void info(String msg) {
+		engine.log(this, GatewayEngine.LOGLEVEL_INFO, msg);
 	}
-
-	@Override
-	public void onPUnsubscribe(String pattern, int subscribedChannels) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void onSubscribe(String channel, int subscribedChannels) {
-		// TODO Auto-generated method stub
-
-	}
-
-	@Override
-	public void onUnsubscribe(String channel, int subscribedChannels) {
-		// TODO Auto-generated method stub
-
+	
+	private void error(String msg) {
+		engine.log(this, GatewayEngine.LOGLEVEL_ERROR, msg);
 	}
 
 }
