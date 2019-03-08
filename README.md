@@ -1,7 +1,7 @@
 # Lucee-Redis-Pub-Sub
 Lucee event gateway used for Redis Pub/Sub
 
-Clone of https://github.com/nmische/cf-redis-sub-gateway and adapted to work with Lucee
+Based on https://github.com/nmische/cf-redis-sub-gateway and adapted to work with Lucee
 
 # License
 MIT License
